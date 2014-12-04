@@ -64,7 +64,7 @@ typedef struct
 
 } PropertyEntry;
 
-static PropertyEntry PS1080PropertyList[] = 
+static PropertyEntry PS1080PropertyList[] =
 {
 	{ XN_STREAM_PROPERTY_INPUT_FORMAT,				"InputFormat" },
 	{ XN_STREAM_PROPERTY_CROPPING_MODE,				"CroppingMode" },
@@ -115,7 +115,7 @@ static PropertyEntry PSLinkPropertyList[] =
 XnStatus PlayerDevice::ResolveGlobalConfigFileName(XnChar* strConfigFile, XnUInt32 nBufSize, const XnChar* strConfigDir)
 {
 	XnStatus rc = XN_STATUS_OK;
-	
+
 	// If strConfigDir is NULL, tries to resolve the config file based on the driver's directory
 	XnChar strBaseDir[XN_FILE_MAX_PATH];
 	if (strConfigDir == NULL)
@@ -183,13 +183,14 @@ void PlayerDevice::LoadConfigurationFromIniFile()
 
 }
 
-PlayerDevice::PlayerDevice(const xnl::String& filePath) : 
+PlayerDevice::PlayerDevice(const xnl::String& filePath) :
 	m_filePath(filePath), m_fileHandle(0), m_threadHandle(NULL), m_running(FALSE), m_isSeeking(FALSE),
-	m_dPlaybackSpeed(1.0), m_nStartTimestamp(0), m_nStartTime(0), m_bHasTimeReference(FALSE), 
-	m_bRepeat(TRUE), m_player(filePath.Data()), m_driverEOFCallback(NULL), m_driverCookie(NULL)
+	m_dPlaybackSpeed(1.0), m_nStartTimestamp(0), m_nStartTime(0), m_nLastFrameTime(0),
+	m_bHasTimeReference(FALSE), m_bRepeat(TRUE), m_player(filePath.Data()), m_driverEOFCallback(NULL), 
+	m_driverCookie(NULL)
 {
 	xnOSMemSet(m_originalDevice, 0, sizeof(m_originalDevice));
-	
+
 	// Create the events.
 	m_readyForDataInternalEvent.Create(FALSE);
 	m_manualTriggerInternalEvent.Create(FALSE);
@@ -203,7 +204,7 @@ PlayerDevice::~PlayerDevice()
 
 OniStatus PlayerDevice::Initialize()
 {
-	static XnNodeNotifications notifications = 
+	static XnNodeNotifications notifications =
 	{
 		OnNodeAdded,
 		OnNodeRemoved,
@@ -214,7 +215,7 @@ OniStatus PlayerDevice::Initialize()
 		OnNodeStateReady,
 		OnNodeNewData,
 	};
-	static XnPlayerInputStreamInterface inputInterface = 
+	static XnPlayerInputStreamInterface inputInterface =
 	{
 		FileOpen,
 		FileRead,
@@ -224,7 +225,7 @@ OniStatus PlayerDevice::Initialize()
 		FileSeek64,
 		FileTell64,
 	};
-	static PlayerNode::CodecFactory codecFactory = 
+	static PlayerNode::CodecFactory codecFactory =
 	{
 		CodecCreate,
 		CodecDestroy
@@ -576,15 +577,18 @@ PlayerSource* PlayerDevice::FindSource(const XnChar* strNodeName)
 	return NULL;
 }
 
+#include <stdio.h>
+
 void PlayerDevice::SleepToTimestamp(XnUInt64 nTimeStamp)
 {
 	XnUInt64 nNow;
 	xnOSGetHighResTimeStamp(&nNow);
 
 	XnBool bHasTimeReference = TRUE;
+
 	{
 		xnl::AutoCSLocker lock(m_cs);
-		if (!m_bHasTimeReference /*&& (nTimeStamp <= m_nStartTimestamp)*/)
+		if (!m_bHasTimeReference /* && (nTimeStamp <= m_nStartTimestamp) */)
 		{
 			m_nStartTimestamp = nTimeStamp;
 			m_nStartTime = nNow;
@@ -596,6 +600,8 @@ void PlayerDevice::SleepToTimestamp(XnUInt64 nTimeStamp)
 
 	if (bHasTimeReference && (m_dPlaybackSpeed > 0.0f))
 	{
+
+		/*
 		// check this data timestamp compared to when we started
 		XnInt64 nTimestampDiff = nTimeStamp - m_nStartTimestamp;
 
@@ -604,13 +610,16 @@ void PlayerDevice::SleepToTimestamp(XnUInt64 nTimeStamp)
 		{
 			XnInt64 nTimeDiff = nNow - m_nStartTime;
 
+			printf("x: %lld %lld", nTimestampDiff, nTimeDiff);
+
 			// check if we need to wait some time
 			XnInt64 nRequestedTimeDiff = (XnInt64)(nTimestampDiff / m_dPlaybackSpeed);
 			if (nTimeDiff < nRequestedTimeDiff)
 			{
 				XnUInt32 nSleep = XnUInt32((nRequestedTimeDiff - nTimeDiff)/1000);
-				nSleep = XN_MIN(nSleep, XN_PLAYBACK_SPEED_SANITY_SLEEP);
+				nSleep = XN_MIN(nSleep, 2000);//100/3);
 				xnOSSleep(nSleep);
+                                printf("\ns: %d\n", nSleep);
 			}
 
 			// update reference to current frame (this will handle cases in which application
@@ -618,6 +627,18 @@ void PlayerDevice::SleepToTimestamp(XnUInt64 nTimeStamp)
 			m_nStartTimestamp = nTimeStamp;
 			xnOSGetHighResTimeStamp(&m_nStartTime);
 		}
+		*/
+
+		XnInt64 nTimeDiff = 1000/60 - (nNow - m_nLastFrameTime)/1000;
+		if(nTimeDiff <= 0)
+			nTimeDiff = 1;
+		else if(nTimeDiff > 500)
+			nTimeDiff = 500;
+		//printf("\ns: %lld %lld %lld\n", (nNow - m_nLastFrameTime)/1000, nTimeDiff, nNow - m_nLastFrameTime);
+		xnOSSleep(nTimeDiff);
+
+		//m_nLastFrameTime = nNow;
+		xnOSGetHighResTimeStamp(&m_nLastFrameTime);
 	}
 }
 
@@ -726,7 +747,7 @@ XnStatus XN_CALLBACK_TYPE PlayerDevice::OnNodeAdded(void* pCookie, const XnChar*
 			if (pSource == NULL)
 			{
 				// Create the new source.
-				OniSensorType sensorType = (type == XN_NODE_TYPE_DEPTH) ? ONI_SENSOR_DEPTH : 
+				OniSensorType sensorType = (type == XN_NODE_TYPE_DEPTH) ? ONI_SENSOR_DEPTH :
 					(type == XN_NODE_TYPE_IMAGE) ? ONI_SENSOR_COLOR : ONI_SENSOR_IR;
 				pSource = XN_NEW(PlayerSource, strNodeName, sensorType);
 				if (pSource == NULL)
@@ -1091,7 +1112,7 @@ XnStatus XN_CALLBACK_TYPE PlayerDevice::OnNodeNewData(void* pCookie, const XnCha
 						}
 					}
 				}
-				else 
+				else
 				{
 					// Wait for streams to become ready.
 					pThis->m_readyForDataInternalEvent.Wait(DEVICE_READY_FOR_DATA_EVENT_SANITY_SLEEP);

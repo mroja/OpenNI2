@@ -158,6 +158,7 @@ private:
 	// Timestamps.
 	XnUInt64 m_nStartTimestamp;
 	XnUInt64 m_nStartTime;
+	XnUInt64 m_nLastFrameTime;
 	XnBool m_bHasTimeReference;
 
 	// Repeat recording in loop.
