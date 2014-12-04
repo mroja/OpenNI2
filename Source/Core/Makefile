@@ -37,6 +37,6 @@ endif
 
 DEFINES += OPENNI2_EXPORT
 
-CFLAGS += -Wall
+CFLAGS += -Wall -g3
 
 include ../../ThirdParty/PSCommon/BuildSystem/CommonCppMakefile
