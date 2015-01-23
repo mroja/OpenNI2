@@ -34,6 +34,13 @@
 #include "PSLink.h"
 #include "XnOSStrings.h"
 
+#if 1
+    //#define LOG_MSG(...) fprintf(stderr, __VA_ARGS__)
+    #define LOG_MSG printf
+#else
+    #define LOG_MSG(...)
+#endif
+
 namespace oni_file {
 
 namespace driver = oni::driver;
@@ -179,8 +186,6 @@ void PlayerDevice::LoadConfigurationFromIniFile()
 	{
 		m_bRepeat = nRepearMode;
 	}
-
-
 }
 
 PlayerDevice::PlayerDevice(const xnl::String& filePath) :
@@ -195,6 +200,8 @@ PlayerDevice::PlayerDevice(const xnl::String& filePath) :
 	m_readyForDataInternalEvent.Create(FALSE);
 	m_manualTriggerInternalEvent.Create(FALSE);
 	m_SeekCompleteInternalEvent.Create(FALSE);
+
+	LOG_MSG("PlayerDevice constructor.\n");
 }
 
 PlayerDevice::~PlayerDevice()
@@ -204,6 +211,8 @@ PlayerDevice::~PlayerDevice()
 
 OniStatus PlayerDevice::Initialize()
 {
+	LOG_MSG("Player device initialization started...\n");
+
 	static XnNodeNotifications notifications =
 	{
 		OnNodeAdded,
@@ -215,6 +224,7 @@ OniStatus PlayerDevice::Initialize()
 		OnNodeStateReady,
 		OnNodeNewData,
 	};
+	
 	static XnPlayerInputStreamInterface inputInterface =
 	{
 		FileOpen,
@@ -225,6 +235,7 @@ OniStatus PlayerDevice::Initialize()
 		FileSeek64,
 		FileTell64,
 	};
+	
 	static PlayerNode::CodecFactory codecFactory =
 	{
 		CodecCreate,
@@ -235,6 +246,7 @@ OniStatus PlayerDevice::Initialize()
 	XnStatus rc = m_player.Init();
 	if (rc != XN_STATUS_OK)
 	{
+		LOG_MSG("m_player.Init failed\n");
 		return ONI_STATUS_ERROR;
 	}
 
@@ -242,6 +254,7 @@ OniStatus PlayerDevice::Initialize()
 	rc = m_player.SetNodeNotifications(this, &notifications);
 	if (rc != XN_STATUS_OK)
 	{
+		LOG_MSG("m_player.SetNodeNotifications failed\n");		
 		return ONI_STATUS_ERROR;
 	}
 
@@ -249,6 +262,7 @@ OniStatus PlayerDevice::Initialize()
 	rc = m_player.SetNodeCodecFactory(this, &codecFactory);
 	if (rc != XN_STATUS_OK)
 	{
+		LOG_MSG("m_player.SetNodeCodecFactory failed\n");
 		return ONI_STATUS_ERROR;
 	}
 
@@ -257,6 +271,7 @@ OniStatus PlayerDevice::Initialize()
 	rc = m_player.RegisterToEndOfFileReached(OnEndOfFileReached, this, handle);
 	if (rc != XN_STATUS_OK)
 	{
+		LOG_MSG("m_player.RegisterToEndOfFileReached failed\n");
 		return ONI_STATUS_ERROR;
 	}
 
@@ -264,6 +279,7 @@ OniStatus PlayerDevice::Initialize()
 	rc = m_player.SetInputStream(this, &inputInterface);
 	if (rc != XN_STATUS_OK)
 	{
+		LOG_MSG("m_player.SetInputStream failed\n");
 		return ONI_STATUS_ERROR;
 	}
 
@@ -271,12 +287,14 @@ OniStatus PlayerDevice::Initialize()
 	XnStatus status = xnOSCreateThread(ThreadProc, this, &m_threadHandle);
 	if (status != XN_STATUS_OK)
 	{
+		LOG_MSG("xnOSCreateThread failed\n");
 		return ONI_STATUS_ERROR;
 	}
 
 	status = ResolveGlobalConfigFileName(m_iniFilePath, sizeof(m_iniFilePath), NULL);
 	if (XN_STATUS_OK != status)
 	{
+		LOG_MSG("ResolveGlobalConfigFileName failed\n");		
 		return ONI_STATUS_ERROR;
 	}
 
@@ -287,6 +305,9 @@ OniStatus PlayerDevice::Initialize()
 	{
 		LoadConfigurationFromIniFile();
 	}
+
+	LOG_MSG("Player device initialized.\n");
+
 	return ONI_STATUS_OK;
 }
 
@@ -322,6 +343,8 @@ void PlayerDevice::close()
 		m_sources.Remove(pSource);
 		XN_DELETE(pSource);
 	}
+
+	LOG_MSG("Player device closed.\n");	
 }
 
 OniStatus PlayerDevice::getSensorInfoList(OniSensorInfo** pSources, int* numSources)
@@ -408,6 +431,8 @@ driver::StreamBase* PlayerDevice::createStream(OniSensorType sensorType)
 		XN_DELETE(pStream);
 		return NULL;
 	}
+
+	LOG_MSG("Player device - stream created.\n");
 
 	return pStream;
 }

@@ -26,16 +26,25 @@
 #include <XnLog.h>
 #include <math.h>
 
+#if 1
+    //#define LOG_MSG(...) fprintf(stderr, __VA_ARGS__)
+    #define LOG_MSG printf
+#else
+    #define LOG_MSG(...)
+#endif
+
 namespace oni_file {
 
 #define XN_MASK_OPEN_NI ""
 
+//#define PLAYER_NODE_LOG_RECORDS
 #ifdef PLAYER_NODE_LOG_RECORDS
 	template <typename T>
 	inline static void DEBUG_LOG_RECORD(T record, const XnChar* strRecordName)
 	{
 		XnChar s[1024];
 		XnUInt32 nCharsWritten = 0;
+		record.AsString(s, sizeof(s), nCharsWritten);
 		XnStatus nRetVal = record.AsString(s, sizeof(s), nCharsWritten);
 		XN_ASSERT(nRetVal == XN_STATUS_OK);
 		xnLogVerbose(XN_MASK_OPEN_NI, "--PLAYER--> %s: %s", strRecordName, s);
@@ -146,6 +155,8 @@ XnStatus PlayerNode::SetInputStream(void *pStreamCookie, XnPlayerInputStreamInte
 	m_pStreamCookie = pStreamCookie;
 	m_pInputStream = pStream;
 	XnStatus nRetVal = OpenStream();
+	if(nRetVal != XN_STATUS_OK)
+		LOG_MSG("PlayerNode::SetInputStream: OpenStream failed.\n");
 	XN_IS_STATUS_OK(nRetVal);
 	return XN_STATUS_OK;
 }
@@ -658,8 +669,12 @@ XnStatus PlayerNode::ProcessRecord(XnBool bProcessPayload)
 	//Read a record and handle it
 	Record record(m_pRecordBuffer, RECORD_MAX_SIZE, m_bIs32bitFileFormat);
 	XnStatus nRetVal = ReadRecord(record);
+	if(nRetVal != XN_STATUS_OK)
+		LOG_MSG("ReadRecord failed\n");
 	XN_IS_STATUS_OK(nRetVal);
 	nRetVal = HandleRecord(record, bProcessPayload);
+	if(nRetVal != XN_STATUS_OK)
+		LOG_MSG("HandleRecord failed\n");
 	XN_IS_STATUS_OK(nRetVal);
 	return XN_STATUS_OK;
 }
@@ -697,18 +712,21 @@ XnStatus PlayerNode::OpenStream()
 	XN_IS_STATUS_OK(nRetVal);
 	if (nBytesRead < sizeof(header))
 	{
+		LOG_MSG("PlayerNode::OpenStream: Not enough bytes read.\n");
 		XN_LOG_ERROR_RETURN(XN_STATUS_CORRUPT_FILE, XN_MASK_OPEN_NI, "Not enough bytes read");
 	}
 
 	/* Check header */
 	if (xnOSMemCmp(header.headerMagic, DEFAULT_RECORDING_HEADER.headerMagic, sizeof(header.headerMagic)) != 0)
 	{
+		LOG_MSG("PlayerNode::OpenStream: Invalid header magic.\n");
 		XN_LOG_ERROR_RETURN(XN_STATUS_CORRUPT_FILE, XN_MASK_OPEN_NI, "Invalid header magic");
 	}
 
 	if ((CompareVersions(&header.version, &OLDEST_SUPPORTED_FILE_FORMAT_VERSION) < 0) || //File format is too old
 		(CompareVersions(&header.version, &DEFAULT_RECORDING_HEADER.version) > 0)) //File format is too new
 	{
+		LOG_MSG("PlayerNode::OpenStream: Unsupported file format version: %u.%u.%u.%u\n", header.version.nMajor, header.version.nMinor, header.version.nMaintenance, header.version.nBuild);		
 		XN_LOG_ERROR_RETURN(XN_STATUS_UNSUPPORTED_VERSION, XN_MASK_OPEN_NI, "Unsupported file format version: %u.%u.%u.%u", header.version.nMajor, header.version.nMinor, header.version.nMaintenance, header.version.nBuild);
 	}
 
@@ -734,6 +752,7 @@ XnStatus PlayerNode::OpenStream()
 	nRetVal = ProcessUntilFirstData();
 	if (nRetVal != XN_STATUS_OK)
 	{
+		LOG_MSG("PlayerNode::OpenStream: ProcessUntilFirstData failed\n");		
 		XN_DELETE_ARR(m_pNodeInfoMap);
 		m_pNodeInfoMap = NULL;
 		xnOSFree(m_aSeekTempArray);
@@ -824,39 +843,84 @@ XnStatus PlayerNode::CloseStream()
 XnStatus PlayerNode::HandleRecord(Record &record, XnBool bHandlePayload)
 {
 	XN_ASSERT(record.IsHeaderValid());
+	if(!record.IsHeaderValid())
+		LOG_MSG("PlayerNode::HandleRecord: record invalid");
+	
+	XnStatus nRetVal;
+	
 	switch (record.GetType())
 	{
 		case RECORD_NODE_ADDED:
-			return HandleNodeAddedRecord(record);
+			nRetVal = HandleNodeAddedRecord(record);
+			if(nRetVal != XN_STATUS_OK)
+				LOG_MSG("PlayerNode::HandleRecord: HandleNodeAddedRecord failed\n");
+			return nRetVal;
 		case RECORD_INT_PROPERTY:
-			return HandleIntPropRecord(record);
+			nRetVal = HandleIntPropRecord(record);
+			if(nRetVal != XN_STATUS_OK)
+				LOG_MSG("PlayerNode::HandleRecord: HandleIntPropRecord failed\n");
+			return nRetVal;			
 		case RECORD_REAL_PROPERTY:
-			return HandleRealPropRecord(record);
+			nRetVal = HandleRealPropRecord(record);
+			if(nRetVal != XN_STATUS_OK)
+				LOG_MSG("PlayerNode::HandleRecord: HandleRealPropRecord failed\n");
+			return nRetVal;			
 		case RECORD_STRING_PROPERTY:
-			return HandleStringPropRecord(record);
+			nRetVal = HandleStringPropRecord(record);
+			if(nRetVal != XN_STATUS_OK)
+				LOG_MSG("PlayerNode::HandleRecord: HandleStringPropRecord failed\n");
+			return nRetVal;			
 		case RECORD_GENERAL_PROPERTY:
-			return HandleGeneralPropRecord(record);
+			nRetVal = HandleGeneralPropRecord(record);
+			if(nRetVal != XN_STATUS_OK)
+				LOG_MSG("PlayerNode::HandleRecord: HandleGeneralPropRecord failed\n");
+			return nRetVal;
 		case RECORD_NODE_REMOVED:
-			return HandleNodeRemovedRecord(record);
+			nRetVal = HandleNodeRemovedRecord(record);
+			if(nRetVal != XN_STATUS_OK)
+				LOG_MSG("PlayerNode::HandleRecord: HandleNodeRemovedRecord failed\n");
+			return nRetVal;			
 		case RECORD_NODE_STATE_READY:
-			return HandleNodeStateReadyRecord(record);
+			nRetVal = HandleNodeStateReadyRecord(record);
+			if(nRetVal != XN_STATUS_OK)
+				LOG_MSG("PlayerNode::HandleRecord: HandleNodeStateReadyRecord failed\n");
+			return nRetVal;			
 		case RECORD_NODE_DATA_BEGIN:
-			return HandleNodeDataBeginRecord(record);
+			nRetVal = HandleNodeDataBeginRecord(record);
+			if(nRetVal != XN_STATUS_OK)
+				LOG_MSG("PlayerNode::HandleRecord: HandleNodeDataBeginRecord failed\n");
+			return nRetVal;			
 		case RECORD_NEW_DATA:
-			return HandleNewDataRecord(record, bHandlePayload);
+			nRetVal = HandleNewDataRecord(record, bHandlePayload);
+			if(nRetVal != XN_STATUS_OK)
+				LOG_MSG("PlayerNode::HandleRecord: HandleNewDataRecord failed\n");
+			return nRetVal;			
 		case RECORD_SEEK_TABLE:
 			// never process this record (it is processed only during node added)
-			return HandleDataIndexRecord(record, FALSE);
+			nRetVal = HandleDataIndexRecord(record, FALSE);
+			if(nRetVal != XN_STATUS_OK)
+				LOG_MSG("PlayerNode::HandleRecord: HandleDataIndexRecord failed\n");
+			return nRetVal;			
 		case RECORD_END:
-			return HandleEndRecord(record);
+			nRetVal = HandleEndRecord(record);
+			if(nRetVal != XN_STATUS_OK)
+				LOG_MSG("PlayerNode::HandleRecord: HandleEndRecord failed\n");
+			return nRetVal;			
 
 		// BC stuff
 		case RECORD_NODE_ADDED_1_0_0_5:
-			return HandleNodeAdded_1_0_0_5_Record(record);
+			nRetVal = HandleNodeAdded_1_0_0_5_Record(record);
+			if(nRetVal != XN_STATUS_OK)
+				LOG_MSG("PlayerNode::HandleRecord: HandleNodeAdded_1_0_0_5_Record failed\n");
+			return nRetVal;			
 		case RECORD_NODE_ADDED_1_0_0_4:
-			return HandleNodeAdded_1_0_0_4_Record(record);
+			nRetVal = HandleNodeAdded_1_0_0_4_Record(record);
+			if(nRetVal != XN_STATUS_OK)
+				LOG_MSG("PlayerNode::HandleRecord: HandleNodeAdded_1_0_0_4_Record failed\n");
+			return nRetVal;			
 
 		default:
+			LOG_MSG("PlayerNode::HandleRecord: unknown record type: ");
 			XN_ASSERT(FALSE);
 			XN_LOG_ERROR_RETURN(XN_STATUS_CORRUPT_FILE, XN_MASK_OPEN_NI, "Unrecognized record type: %u", record.GetType());
 	}		
@@ -864,8 +928,17 @@ XnStatus PlayerNode::HandleRecord(Record &record, XnBool bHandlePayload)
 
 PlayerNode::PlayerNodeInfo* PlayerNode::GetPlayerNodeInfo(XnUInt32 nNodeID)
 {
+	nNodeID--;
+	if(nNodeID >= m_nMaxNodes)
+	{
+		LOG_MSG("PlayerNode::GetPlayerNodeInfo: Got node ID %u, bigger than said max of %u\n", nNodeID, m_nMaxNodes);
+		LOG_MSG("PlayerNode::GetPlayerNodeInfo: ERROR, ERROR, ERROR, ERROR\n");
+		nNodeID = m_nMaxNodes - 1;
+	}
+
 	if (nNodeID >= m_nMaxNodes)
 	{
+		LOG_MSG("PlayerNode::GetPlayerNodeInfo: Got node ID %u, bigger than said max of %u\n", nNodeID, m_nMaxNodes);
 		xnLogWarning(XN_MASK_OPEN_NI, "Got node ID %u, bigger than said max of %u", nNodeID, m_nMaxNodes);
 		XN_ASSERT(FALSE);
 		return NULL;
@@ -921,14 +994,20 @@ XnStatus PlayerNode::HandleNodeAddedImpl(XnUInt32 nNodeID, XnProductionNodeType 
 	XnStatus nRetVal = XN_STATUS_OK;
 
 	PlayerNodeInfo* pPlayerNodeInfo = GetPlayerNodeInfo(nNodeID);
+	if (!pPlayerNodeInfo)
+		LOG_MSG("PlayerNode::HandleNodeAddedImpl: GetPlayerNodeInfo failed\n");	
 	XN_VALIDATE_PTR(pPlayerNodeInfo, XN_STATUS_CORRUPT_FILE);
 
 	//Notify node was added
 	nRetVal = m_pNodeNotifications->OnNodeAdded(m_pNotificationsCookie, strName, type, compression, nNumberOfFrames);
+	if (nRetVal != XN_STATUS_OK)
+		LOG_MSG("PlayerNode::HandleNodeAddedImpl: OnNodeAdded failed\n");
 	XN_IS_STATUS_OK(nRetVal);
 
 	pPlayerNodeInfo->compression = compression;
 	nRetVal = xnOSStrCopy(pPlayerNodeInfo->strName, strName, sizeof(pPlayerNodeInfo->strName));
+	if (nRetVal != XN_STATUS_OK)
+		LOG_MSG("PlayerNode::HandleNodeAddedImpl: xnOSStrCopy failed\n");
 	XN_IS_STATUS_OK(nRetVal);
 
 	if (IsTypeGenerator(type))
@@ -949,6 +1028,7 @@ XnStatus PlayerNode::HandleNodeAddedImpl(XnUInt32 nNodeID, XnProductionNodeType 
 		if (nRetVal != XN_STATUS_OK)
 		{
 			pPlayerNodeInfo->bValid = FALSE;
+			LOG_MSG("PlayerNode::HandleNodeAddedImpl: not ready\n");
 			return nRetVal;
 		}
 	}
@@ -1050,16 +1130,21 @@ XnStatus PlayerNode::HandleNodeAddedRecord(NodeAddedRecord record)
 
 	XN_IS_STATUS_OK(nRetVal);
 
+	LOG_MSG("PlayerNode::HandleNodeAddedRecord: NodeAdded\n");
 	DEBUG_LOG_RECORD(record, "NodeAdded");
 
 	nRetVal = HandleNodeAddedImpl(
 		record.GetNodeID(), record.GetNodeType(), record.GetNodeName(), record.GetCompression(),
 		record.GetNumberOfFrames(), record.GetMinTimestamp(), record.GetMaxTimestamp());
+	if(nRetVal != XN_STATUS_OK)
+		LOG_MSG("PlayerNode::HandleNodeAddedRecord: HandleNodeAddedImpl failed\n");
 	XN_IS_STATUS_OK(nRetVal);
 
 	// get seek table (if exists)
-	if (record.GetNumberOfFrames() > 0 && record.GetSeekTablePosition() != 0)
+	if(record.GetNumberOfFrames() > 0 && record.GetSeekTablePosition() != 0)
 	{
+		LOG_MSG("PlayerNode::HandleNodeAddedRecord: get seek table\n");
+
 		XnUInt64 nCurrPos = TellStream();
 
 		nRetVal = SeekStream(XN_OS_SEEK_SET, record.GetSeekTablePosition());
@@ -1132,6 +1217,8 @@ XnStatus PlayerNode::HandleGeneralPropRecord(GeneralPropRecord record)
 {
 	XN_VALIDATE_INPUT_PTR(m_pNodeNotifications);
 	XnStatus nRetVal = record.Decode();
+	if(nRetVal != XN_STATUS_OK)
+		LOG_MSG("PlayerNode::HandleGeneralPropRecord: record.Decode failed");
 	XN_IS_STATUS_OK(nRetVal);
 	DEBUG_LOG_RECORD(record, "GeneralProp");
 
@@ -1140,6 +1227,7 @@ XnStatus PlayerNode::HandleGeneralPropRecord(GeneralPropRecord record)
 	if (!pPlayerNodeInfo->bValid)
 	{
 		XN_ASSERT(FALSE);
+		LOG_MSG("PlayerNode::HandleGeneralPropRecord: corrupt file (PlayerNodeInfo invalid)");
 		return XN_STATUS_CORRUPT_FILE;
 	}
 
@@ -1148,6 +1236,7 @@ XnStatus PlayerNode::HandleGeneralPropRecord(GeneralPropRecord record)
 	{
 		xnOSMemCopy(&m_lastOutputMode, record.GetPropData(), sizeof(XnMapOutputMode));
 	}
+	
 	// Fix backwards compatibility issues
 	if (strcmp(record.GetPropName(), XN_PROP_REAL_WORLD_TRANSLATION_DATA) == 0)
 	{
@@ -1155,6 +1244,7 @@ XnStatus PlayerNode::HandleGeneralPropRecord(GeneralPropRecord record)
 		// it to Field Of View
 		if (record.GetPropDataSize() != sizeof(XnRealWorldTranslationData))
 		{
+			LOG_MSG("PlayerNode::HandleGeneralPropRecord: corrupt file 2");			
 			return XN_STATUS_CORRUPT_FILE;
 		}
 
@@ -1180,6 +1270,8 @@ XnStatus PlayerNode::HandleGeneralPropRecord(GeneralPropRecord record)
 			record.GetPropName(),
 			record.GetPropDataSize(),
 			record.GetPropData());
+		if(nRetVal != XN_STATUS_OK)
+			LOG_MSG("PlayerNode::HandleGeneralPropRecord: OnNodeGeneralPropChanged failed");			
 		XN_IS_STATUS_OK(nRetVal);
 	}
 	
@@ -1187,6 +1279,8 @@ XnStatus PlayerNode::HandleGeneralPropRecord(GeneralPropRecord record)
 		record.GetPropName(), 
 		TellStream() - record.GetSize(),
 		record.GetUndoRecordPos());
+	if(nRetVal != XN_STATUS_OK)
+		LOG_MSG("PlayerNode::HandleGeneralPropRecord: SaveRecordUndoInfo failed");	
 	XN_IS_STATUS_OK(nRetVal);
 
 	return XN_STATUS_OK;
